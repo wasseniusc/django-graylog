@@ -13,7 +13,10 @@ import traceback
 import urllib.parse
 
 from django.conf import settings
+from django.contrib.auth import signals as auth_signals
 from django.core.exceptions import ImproperlyConfigured, MiddlewareNotUsed
+from django.dispatch.dispatcher import receiver
+
 
 try:
     import requests
@@ -124,6 +127,10 @@ class GraylogProxy:
         if name in GELF_RESERVED_FIELDS:
             raise KeyError("Invalid key ({}). This key name is reserved.".format(name))
         self.extra[name] = value
+        
+    def update(self, d):
+        for k, v in d.items():
+            self[k] = v 
 
     def log(self, level, message, *args, **kwargs):
         name = kwargs.get("_name", self.default_name)
@@ -262,7 +269,10 @@ class GraylogMiddleware:
 
     def __init__(self, get_response):
         self.endpoint = getattr(settings, "GRAYLOG_ENDPOINT", "")
-        self.filters = compile_filters(getattr(settings, "GRAYLOG_FILTERS", {}))
+        exclude_filters = getattr(settings, "GRAYLOG_EXCLUDE_FILTERS", [])
+        self.exclude_filters = [compile_filters(config) for config in exclude_filters]
+        include_filters = getattr(settings, "GRAYLOG_INCLUDE_FILTERS", [])
+        self.include_filters = [compile_filters(config['filters']) for config in include_filters]
         self.facility = getattr(settings, "GRAYLOG_FACILITY", "django-graylog")
         if not self.endpoint:
             raise MiddlewareNotUsed()
@@ -313,15 +323,43 @@ class GraylogMiddleware:
         fields["full_message"] = textwrap.dedent("".join(lines)).rstrip()
         setattr(request, "_graylog_exception", fields)
 
-    def filter(self, record, request, response):
-        for field_name, regexes in self.filters.items():
-            if field_name not in record:
-                continue
-            value = str(record[field_name])
-            for regex in regexes:
-                if regex.match(value):
-                    return False
-        return True
+    def _filter_match(self, field_name, regexes, record):
+        if field_name not in record:
+            return False
+        value = str(record[field_name])
+        for regex in regexes:
+            if regex.match(value):
+                return True
+        return False       
+
+    def filter(self, record, request, response):  
+        """
+        :return True to include record, False to exclude
+        """
+        for exclude_config in self.exclude_filters:
+            exclude = len(exclude_config) > 0
+            for field_name, regexes in exclude_config.items():
+                if not self._filter_match(field_name, regexes, record):
+                    exclude = False
+                    break
+            if exclude:
+                return False
+        
+        if not self.include_filters:
+            return True
+        
+        for index, include_config in enumerate(self.include_filters):
+            include = True
+            for field_name, regexes in include_config.items():
+                if not self._filter_match(field_name, regexes, record):
+                    include = False
+                    break
+            if include:
+                extra_data = GraylogProxy()
+                extra_data.update(settings.GRAYLOG_INCLUDE_FILTERS[index]['extra_fields'])
+                record.update(extra_data.additional_fields())
+                return True 
+        return False
 
     def parse_agent(self, agent):
         if not agent:
@@ -426,3 +464,33 @@ class GraylogMiddleware:
         if graylog:
             record.update(graylog.additional_fields())
         return record
+
+def register_login_handler(extra_fields={}):
+
+    @receiver(auth_signals.user_logged_in)
+    def login_handler(sender, **kwargs):
+        request = kwargs.get("request")
+        request.graylog.update(extra_fields)
+        request.graylog.info("User - {user} has logged on.", user=request.user.get_username())
+    
+def register_logout_handler(extra_fields={}):   
+     
+    @receiver(auth_signals.user_logged_out)
+    def logout_handler(sender, **kwargs):
+        request = kwargs.get("request")
+        request.graylog.update(extra_fields)
+        request.graylog.info("User - {user} has logged off.", user=request.user.get_username())
+    
+def register_login_failed_handler(extra_fields={}):
+       
+    @receiver(auth_signals.user_login_failed)
+    def login_failed_handler(sender, **kwargs):
+        request = kwargs.get("request", None)
+        user = kwargs.get("user", None)
+        request.graylog.update(extra_fields)
+        if user:
+            username = user.get_username()
+        else:
+            username = 'Unknown user'
+        request.graylog.update(extra_fields)
+        request.graylog.info("User - {username} login has failed", username=username)

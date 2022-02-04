@@ -50,14 +50,33 @@ unless `GRAYLOG_ENDPOINT` is set (see below).
   `False`).
 * `GRAYLOG_TIMING` - `True` to include request timing information (the default), `False`
   to disable.
-* `GRAYLOG_FILTERS` - A dictionary of filters to exclude records from being logged. Each
-  key is a field name, and each value is a list of regegular expressions to exclude. For
+* `GRAYLOG_INCLUDE_FILTERS` - A list of dictionary of filters to include records logged. Each record contains a dictionary of `filters` where each key is a field name, and each value is a list of regular expressions to include. Additionally, an optional `extra_fields` dictionary can be specified to be included. If not specified, the default behavior is to log all requests. For example:
+  
+```python
+  [
+      # includes logging of requests to paths starting with `admin`. Adds 'event_type' 'Django Admin Access' to log record.
+      {
+          'filters': {"path": [r"^/admin"]}, 
+          'extra_fields: {'event_type': 'Django Admin Access'}
+      },
+      # includes logging of POST requests to paths starting with `users`.
+      {
+          'filters': {"path": [r"^/users"], "method": "POST"},    
+      }
+  ]
+```
+* `GRAYLOG_EXCLUDE_FILTERS` - A list of dictionary of filters to exclude records from being logged. Each
+  key is a field name, and each value is a list of regular expressions to exclude. (default is `[]`). For
   example:
-    - `{"host": [r"media.example.com"]}` - Skips logging of requests to the
-      `media.example.com` domain.
-    - `{"path": [r"^/_"]}` - Skips logging of requests to paths starting with `_`.
-    - `{"ip": "192\.168\."}` - Skips logging of requests from `192.168.*` addresses.
-      Using a string instead of a list works for a single regular expression.
+  
+```python
+  [
+      {"host": [r"media.example.com"]}, # Skips logging of requests to the `media.example.com` domain.
+      {"path": [r"^/_"]}, # Skips logging of requests to paths starting with `_`.
+      {"ip": "192\.168\."}, # Skips logging of requests from `192.168.*` addresses. Using a string instead of a list works for a single regular expression.
+      {"path": [r"^/contact"], "method": "GET"} # Skips logging GET requests to paths starting with `contact`
+  ]
+```
 * `GRAYLOG_EXCEPTION_MESSAGES` - Whether to include exception messages in data sent to
   Graylog. Setting to `False` will strip the last line from stack traces (in case the
   line includes a literal message), and not send the `_exception_message` field.
