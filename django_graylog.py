@@ -15,7 +15,6 @@ import urllib.parse
 from django.conf import settings
 from django.contrib.auth import signals as auth_signals
 from django.core.exceptions import ImproperlyConfigured, MiddlewareNotUsed
-from django.dispatch.dispatcher import receiver
 
 
 try:
@@ -259,6 +258,8 @@ def compile_filters(filters):
 
 
 class GraylogMiddleware:
+    LOGGER_NAME = 'django_graylog'
+    
     scheme_transports = {
         "http": RequestsTransport,
         "https": RequestsTransport,
@@ -300,6 +301,10 @@ class GraylogMiddleware:
                 self.transport.send(record)
                 if isinstance(self.transport, TestTransport):
                     setattr(response, self.transport.attribute, record)
+            
+            # log the log write in case any other handlers are interested
+            logger = logging.getLogger(self.LOGGER_NAME)
+            logger.log(logging.getLevelName(record['level'].name), record)
         except Exception:
             if getattr(settings, "DEBUG", False):
                 raise

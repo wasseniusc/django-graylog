@@ -104,7 +104,9 @@ def homepage(request):
 
 If you want standard Python logging calls during a request to be logged into Graylog as
 well, `django_graylog` comes with a `GraylogRequestHandler` logging handler that tracks
-the current request and associates logging to it.
+the current request and associates logging to it. 
+
+Anything logged to Graylog is also logged to standard Python logging under the logger name `django_graylog`.
 
 `django_graylog` also provides signal handlers for user log on, log off, and failed log on attempts. Register by calling
 `register_login_handler()`, `register_logout_handler()`, and `register_login_failed_handler()` respectfully. You can instruct
