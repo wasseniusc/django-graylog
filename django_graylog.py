@@ -93,10 +93,17 @@ def get_ip(request):
 
 
 class GraylogRequestHandler(logging.Handler):
+    def __init__(self, extra_fields=()):
+        super().__init__()
+        self.extra_fields = extra_fields
+    
     def emit(self, record):
         try:
             request = current_request.get()
             if request and hasattr(request, "graylog"):
+                for field in self.extra_fields:
+                    if hasattr(record, field):
+                        request.graylog[field] = getattr(record, field)
                 request.graylog.log(
                     Severity.from_level(record.levelno),
                     self.format(record),
@@ -350,7 +357,7 @@ class GraylogMiddleware:
             if exclude:
                 return False
         
-        if not self.include_filters:
+        if (not self.include_filters) or request.graylog.logs:
             return True
         
         for index, include_config in enumerate(self.include_filters):
