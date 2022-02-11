@@ -357,9 +357,6 @@ class GraylogMiddleware:
             if exclude:
                 return False
         
-        if (not self.include_filters) or request.graylog.logs:
-            return True
-        
         for index, include_config in enumerate(self.include_filters):
             include = True
             for field_name, regexes in include_config.items():
@@ -371,7 +368,8 @@ class GraylogMiddleware:
                 extra_data.update(settings.GRAYLOG_INCLUDE_FILTERS[index].get('extra_fields', {}))
                 record.update(extra_data.additional_fields())
                 return True 
-        return False
+            
+        return (not self.include_filters) or request.graylog.logs
 
     def parse_agent(self, agent):
         if not agent:
@@ -485,7 +483,7 @@ def register_login_handler(extra_fields={}):
             request.graylog.update(extra_fields)
             request.graylog.info("User - {user} has logged on.", user=request.user.get_username())
         
-    auth_signals.user_logged_in.connect(login_handler)
+    auth_signals.user_logged_in.connect(login_handler, weak=False)
     
 def register_logout_handler(extra_fields={}):   
      
@@ -495,7 +493,7 @@ def register_logout_handler(extra_fields={}):
             request.graylog.update(extra_fields)
             request.graylog.info("User - {user} has logged off.", user=request.user.get_username())
     
-    auth_signals.user_logged_out.connect(logout_handler)
+    auth_signals.user_logged_out.connect(logout_handler, weak=False)
     
 def register_login_failed_handler(extra_fields={}):
        
@@ -511,4 +509,4 @@ def register_login_failed_handler(extra_fields={}):
             request.graylog.update(extra_fields)
             request.graylog.info("User - {username} login has failed", username=username)
         
-    auth_signals.user_login_failed.connect(login_failed_handler)
+    auth_signals.user_login_failed.connect(login_failed_handler, weak=False)
